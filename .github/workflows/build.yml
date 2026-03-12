@@ -46,15 +46,37 @@ jobs:
           xcodebuild build \
             -project Nexus.xcodeproj \
             -scheme NexusChat \
-            -destination 'generic/platform=iOS' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             -configuration Release \
             -clonedSourcePackagesDirPath .spm-cache \
+            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             2>&1 | tee build.log | tail -80
           echo "Build exit code: ${PIPESTATUS[0]}"
+
+      - name: Package NexusChat.app
+        if: success()
+        run: |
+          APP_PATH=$(find DerivedData -name "NexusChat.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            cd "$(dirname "$APP_PATH")"
+            zip -r "$GITHUB_WORKSPACE/NexusChat-Simulator.zip" "NexusChat.app"
+            echo "Packaged: $APP_PATH"
+          else
+            echo "Warning: NexusChat.app not found in DerivedData"
+            find DerivedData -name "*.app" -type d || true
+          fi
+
+      - name: Upload NexusChat artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusChat-Simulator
+          path: NexusChat-Simulator.zip
+          if-no-files-found: warn
 
   build-nexus:
     name: Build Nexus (llama.cpp)
@@ -87,12 +109,34 @@ jobs:
           xcodebuild build \
             -project Nexus.xcodeproj \
             -scheme Nexus \
-            -destination 'generic/platform=iOS' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             -configuration Release \
             -clonedSourcePackagesDirPath .spm-cache \
+            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
             2>&1 | tee build.log | tail -80
           echo "Build exit code: ${PIPESTATUS[0]}"
+
+      - name: Package Nexus.app
+        if: success()
+        run: |
+          APP_PATH=$(find DerivedData -name "Nexus.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            cd "$(dirname "$APP_PATH")"
+            zip -r "$GITHUB_WORKSPACE/Nexus-Simulator.zip" "Nexus.app"
+            echo "Packaged: $APP_PATH"
+          else
+            echo "Warning: Nexus.app not found in DerivedData"
+            find DerivedData -name "*.app" -type d || true
+          fi
+
+      - name: Upload Nexus artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexus-Simulator
+          path: Nexus-Simulator.zip
+          if-no-files-found: warn
