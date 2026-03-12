@@ -103,35 +103,34 @@ final class ChatViewModel {
         }
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            var finished = false
-            let finish = {
-                if !finished {
-                    finished = true
-                    continuation.resume()
-                }
-            }
+            let gate = ResumeOnce(continuation)
+
             apiService.streamChat(
                 messages: Array(history),
                 model: "auto",
                 method: "auto",
                 onToken: { [weak self] text in
-                    guard let self,
-                          assistantIndex < self.messages.count,
-                          self.messages[assistantIndex].role == .assistant else { return }
-                    self.messages[assistantIndex].content += text
+                    MainActor.assumeIsolated {
+                        guard let self,
+                              assistantIndex < self.messages.count,
+                              self.messages[assistantIndex].role == .assistant else { return }
+                        self.messages[assistantIndex].content += text
+                    }
                 },
                 onMetrics: { [weak self] metrics in
-                    guard let self else { return }
-                    self.lastInfoSummary = String(format: "%.1f tok/s", metrics.tokensPerSec)
-                    finish()
+                    MainActor.assumeIsolated {
+                        self?.lastInfoSummary = String(format: "%.1f tok/s", metrics.tokensPerSec)
+                    }
+                    gate.resume()
                 },
                 onError: { [weak self] msg in
-                    guard let self else { return }
-                    self.errorMessage = msg
-                    finish()
+                    MainActor.assumeIsolated {
+                        self?.errorMessage = msg
+                    }
+                    gate.resume()
                 },
                 onComplete: {
-                    finish()
+                    gate.resume()
                 }
             )
         }
@@ -149,5 +148,22 @@ final class ChatViewModel {
         messages.removeAll()
         errorMessage = nil
         lastInfoSummary = nil
+    }
+}
+
+/// Thread-safe one-shot continuation wrapper for use in @Sendable closures.
+/// All callers are serialized on MainActor via NexusAPIService.streamChat.
+private final class ResumeOnce: @unchecked Sendable {
+    private var resumed = false
+    private let continuation: CheckedContinuation<Void, Never>
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume() {
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume()
     }
 }
