@@ -17,8 +17,8 @@ settings:
 
 packages:
   llama:
-    url: https://github.com/ggerganov/llama.cpp
-    from: "4000.0.0"
+    url: https://github.com/StanfordBDHG/llama.cpp
+    from: "0.3.3"
   mlx-swift-lm:
     url: https://github.com/ml-explore/mlx-swift-lm
     branch: main

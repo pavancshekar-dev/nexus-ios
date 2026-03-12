@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-nexuschat:
     name: Build NexusChat (MLX)
@@ -27,18 +30,19 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: .spm-cache
+          key: spm-nexuschat-${{ hashFiles('project.yml', 'Package.swift') }}
+          restore-keys: spm-nexuschat-
+
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Resolve SPM dependencies
-        run: |
-          xcodebuild -resolvePackageDependencies \
-            -project Nexus.xcodeproj \
-            -scheme NexusChat \
-            -clonedSourcePackagesDirPath .spm-cache
-
       - name: Build NexusChat
         run: |
+          set -o pipefail
           xcodebuild build \
             -project Nexus.xcodeproj \
             -scheme NexusChat \
@@ -48,7 +52,8 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            2>&1 | tee build.log | tail -50
+          echo "Build exit code: ${PIPESTATUS[0]}"
 
   build-nexus:
     name: Build Nexus (llama.cpp)
@@ -65,18 +70,19 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: .spm-cache
+          key: spm-nexus-${{ hashFiles('project.yml') }}
+          restore-keys: spm-nexus-
+
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Resolve SPM dependencies
-        run: |
-          xcodebuild -resolvePackageDependencies \
-            -project Nexus.xcodeproj \
-            -scheme Nexus \
-            -clonedSourcePackagesDirPath .spm-cache
-
       - name: Build Nexus
         run: |
+          set -o pipefail
           xcodebuild build \
             -project Nexus.xcodeproj \
             -scheme Nexus \
@@ -86,4 +92,6 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+            2>&1 | tee build.log | tail -50
+          echo "Build exit code: ${PIPESTATUS[0]}"
