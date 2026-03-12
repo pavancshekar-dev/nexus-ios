@@ -68,7 +68,7 @@ actor NexusAPIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let hardware = DeviceInfo.current
+        let hardware = await DeviceInfo.current
         let body = RegisterRequest(
             name: hardware.name,
             platform: hardware.platform,
@@ -319,6 +319,7 @@ struct DeviceInfo {
     let ramGB: Int
     let storageGB: Int
 
+    @MainActor
     static var current: DeviceInfo {
         #if os(iOS)
         let device = UIDevice.current

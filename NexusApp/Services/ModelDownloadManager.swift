@@ -3,19 +3,21 @@ import Observation
 import SwiftUI
 
 @Observable
-final class ModelDownloadManager: NSObject {
+@MainActor
+final class ModelDownloadManager {
     var progress: [String: Double] = [:]
     var downloadedModels: Set<String> = []
     var activeDownloads: [String: URLSessionDownloadTask] = [:]
 
-    private lazy var session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 3600
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
-    }()
-
+    @ObservationIgnored
     private var progressHandlers: [Int: String] = [:] // taskId -> modelFile
+    @ObservationIgnored
     private var completionHandlers: [Int: CheckedContinuation<URL, Error>] = [:]
+
+    @ObservationIgnored
+    private var session: URLSession!
+    @ObservationIgnored
+    private var sessionDelegate: DownloadSessionDelegate!
 
     static var modelsDirectory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -24,9 +26,58 @@ final class ModelDownloadManager: NSObject {
         return dir
     }
 
-    override init() {
-        super.init()
+    init() {
+        sessionDelegate = DownloadSessionDelegate()
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = 3600
+        session = URLSession(configuration: config, delegate: sessionDelegate, delegateQueue: nil)
+
+        sessionDelegate.onFinished = { [weak self] taskId, tempLocation in
+            // Copy file immediately on delegate queue (system deletes original after return)
+            let safeCopy = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+            try? FileManager.default.copyItem(at: tempLocation, to: safeCopy)
+            Task { @MainActor [weak self] in
+                self?.handleDownloadFinished(taskId: taskId, location: safeCopy)
+            }
+        }
+        sessionDelegate.onProgress = { [weak self] taskId, fraction in
+            Task { @MainActor [weak self] in
+                self?.handleProgress(taskId: taskId, fraction: fraction)
+            }
+        }
+        sessionDelegate.onError = { [weak self] taskId, error in
+            Task { @MainActor [weak self] in
+                self?.handleDownloadError(taskId: taskId, error: error)
+            }
+        }
+
         loadDownloadedModels()
+    }
+
+    // MARK: - Delegate Handlers
+
+    private func handleDownloadFinished(taskId: Int, location: URL) {
+        if let continuation = completionHandlers.removeValue(forKey: taskId) {
+            progressHandlers.removeValue(forKey: taskId)
+            continuation.resume(returning: location)
+        }
+    }
+
+    private func handleProgress(taskId: Int, fraction: Double) {
+        guard let filename = progressHandlers[taskId] else { return }
+        progress[filename] = fraction
+    }
+
+    private func handleDownloadError(taskId: Int, error: Error) {
+        if let continuation = completionHandlers.removeValue(forKey: taskId) {
+            let filename = progressHandlers.removeValue(forKey: taskId)
+            continuation.resume(throwing: error)
+            if let filename {
+                activeDownloads.removeValue(forKey: filename)
+                progress.removeValue(forKey: filename)
+            }
+        }
     }
 
     // MARK: - Public
@@ -58,11 +109,9 @@ final class ModelDownloadManager: NSObject {
         }
         try FileManager.default.moveItem(at: localURL, to: destination)
 
-        await MainActor.run {
-            self.downloadedModels.insert(filename)
-            self.progress.removeValue(forKey: filename)
-            self.activeDownloads.removeValue(forKey: filename)
-        }
+        downloadedModels.insert(filename)
+        progress.removeValue(forKey: filename)
+        activeDownloads.removeValue(forKey: filename)
 
         saveDownloadedModels()
     }
@@ -105,19 +154,19 @@ final class ModelDownloadManager: NSObject {
     }
 }
 
-// MARK: - URLSessionDownloadDelegate
+// MARK: - URLSession Delegate (separate from @Observable class)
 
-extension ModelDownloadManager: URLSessionDownloadDelegate {
+private final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    var onFinished: (@Sendable (Int, URL) -> Void)?
+    var onProgress: (@Sendable (Int, Double) -> Void)?
+    var onError: (@Sendable (Int, Error) -> Void)?
+
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        let taskId = downloadTask.taskIdentifier
-        if let continuation = completionHandlers.removeValue(forKey: taskId) {
-            progressHandlers.removeValue(forKey: taskId)
-            continuation.resume(returning: location)
-        }
+        onFinished?(downloadTask.taskIdentifier, location)
     }
 
     func urlSession(
@@ -127,15 +176,9 @@ extension ModelDownloadManager: URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        let taskId = downloadTask.taskIdentifier
-        guard let filename = progressHandlers[taskId],
-              totalBytesExpectedToWrite > 0
-        else { return }
-
+        guard totalBytesExpectedToWrite > 0 else { return }
         let pct = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        Task { @MainActor in
-            self.progress[filename] = pct
-        }
+        onProgress?(downloadTask.taskIdentifier, pct)
     }
 
     func urlSession(
@@ -143,17 +186,8 @@ extension ModelDownloadManager: URLSessionDownloadDelegate {
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        let taskId = task.taskIdentifier
-        if let error = error,
-           let continuation = completionHandlers.removeValue(forKey: taskId) {
-            let filename = progressHandlers.removeValue(forKey: taskId)
-            continuation.resume(throwing: error)
-            if let filename {
-                Task { @MainActor in
-                    self.activeDownloads.removeValue(forKey: filename)
-                    self.progress.removeValue(forKey: filename)
-                }
-            }
+        if let error {
+            onError?(task.taskIdentifier, error)
         }
     }
 }
