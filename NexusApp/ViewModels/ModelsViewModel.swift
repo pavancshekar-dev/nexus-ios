@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 @Observable
+@MainActor
 final class ModelsViewModel {
     var mobileModels: [MobileModel] = []
     var serverModels: [ServerModel] = []

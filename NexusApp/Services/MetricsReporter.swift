@@ -6,6 +6,7 @@ import UIKit
 #endif
 
 @Observable
+@MainActor
 final class MetricsReporter {
     var latestMetrics = SystemMetrics(cpuUsage: 0, memoryUsage: 0, temperature: 0, batteryLevel: 100)
     var totalInferences: Int = 0
@@ -162,7 +163,7 @@ final class MetricsReporter {
         var totalUsage: Double = 0
         for i in 0..<Int(threadCount) {
             var threadInfo = thread_basic_info()
-            var infoCount = mach_msg_type_number_t(THREAD_BASIC_INFO_COUNT)
+            var infoCount = mach_msg_type_number_t(MemoryLayout<thread_basic_info>.size / MemoryLayout<integer_t>.size)
             let kr = withUnsafeMutablePointer(to: &threadInfo) {
                 $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) {
                     thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &infoCount)
