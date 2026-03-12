@@ -42,8 +42,8 @@ final class LlamaEngine {
         model = m
 
         var ctxParams = llama_context_default_params()
-        ctxParams.n_ctx = contextSize
-        ctxParams.n_batch = batchSize
+        ctxParams.n_ctx = UInt32(contextSize)
+        ctxParams.n_batch = UInt32(batchSize)
         ctxParams.n_threads = Int32(min(max(ProcessInfo.processInfo.processorCount - 2, 2), 4))
 
         guard let c = llama_init_from_model(m, ctxParams) else {
@@ -138,7 +138,7 @@ final class LlamaEngine {
                     tokens = Array(tokens.prefix(Int(nTokens)))
 
                     // Clear KV cache
-                    llama_kv_self_clear(context)
+                    llama_memory_clear(llama_get_memory(context), true)
 
                     // Process prompt in batches
                     var batch = llama_batch_init(self.batchSize, 0, 1)
