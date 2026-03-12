@@ -10,7 +10,7 @@ final class LlamaEngine {
 
     private var model: OpaquePointer?      // llama_model *
     private var context: OpaquePointer?    // llama_context *
-    private var sampler: OpaquePointer?    // llama_sampler *
+    private var sampler: UnsafeMutablePointer<llama_sampler>?
 
     private let queue = DispatchQueue(label: "com.qpiai.nexus.llama", qos: .userInitiated)
     private var cancelled = false
@@ -42,9 +42,9 @@ final class LlamaEngine {
         model = m
 
         var ctxParams = llama_context_default_params()
-        ctxParams.n_ctx = UInt32(contextSize)
-        ctxParams.n_batch = UInt32(batchSize)
-        ctxParams.n_threads = UInt32(min(max(ProcessInfo.processInfo.processorCount - 2, 2), 4))
+        ctxParams.n_ctx = contextSize
+        ctxParams.n_batch = batchSize
+        ctxParams.n_threads = Int32(min(max(ProcessInfo.processInfo.processorCount - 2, 2), 4))
 
         guard let c = llama_init_from_model(m, ctxParams) else {
             llama_model_free(m)
@@ -138,7 +138,7 @@ final class LlamaEngine {
                     tokens = Array(tokens.prefix(Int(nTokens)))
 
                     // Clear KV cache
-                    llama_kv_cache_clear(context)
+                    llama_kv_self_clear(context)
 
                     // Process prompt in batches
                     var batch = llama_batch_init(self.batchSize, 0, 1)

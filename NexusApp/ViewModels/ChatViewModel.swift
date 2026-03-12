@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 @Observable
+@MainActor
 final class ChatViewModel {
     var messages: [ChatMessage] = []
     var isGenerating = false

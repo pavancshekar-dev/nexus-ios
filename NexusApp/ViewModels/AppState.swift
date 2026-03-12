@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 @Observable
+@MainActor
 final class AppState {
     // Connection
     var serverUrl: String {
