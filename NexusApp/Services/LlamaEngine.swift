@@ -1,6 +1,6 @@
 import Foundation
 import Observation
-import llama
+import LlamaSwift
 
 @Observable
 final class LlamaEngine {
@@ -111,6 +111,7 @@ final class LlamaEngine {
                 do {
                     // Format messages using chat template
                     let prompt = self.formatPrompt(messages: messages, model: model)
+                    let vocab = llama_model_get_vocab(model)
 
                     // Tokenize
                     guard let promptCStr = prompt.cString(using: .utf8) else {
@@ -120,7 +121,7 @@ final class LlamaEngine {
                     let maxTokenCount = Int32(promptCStr.count + 256)
                     var tokens = [llama_token](repeating: 0, count: Int(maxTokenCount))
                     let nTokens = llama_tokenize(
-                        model,
+                        vocab,
                         promptCStr,
                         Int32(promptCStr.count - 1),
                         &tokens,
@@ -168,11 +169,11 @@ final class LlamaEngine {
                     while nGenerated < Int32(maxTokens) && !self.cancelled {
                         let token = llama_sampler_sample(sampler, context, -1)
 
-                        if llama_vocab_is_eog(model, token) { break }
+                        if llama_vocab_is_eog(vocab, token) { break }
 
                         // Convert token to text
                         var buf = [CChar](repeating: 0, count: 256)
-                        let len = llama_token_to_piece(model, token, &buf, 256, 0, true)
+                        let len = llama_token_to_piece(vocab, token, &buf, 256, 0, true)
 
                         if len > 0 {
                             let tokenData = Data(bytes: buf, count: Int(len))
