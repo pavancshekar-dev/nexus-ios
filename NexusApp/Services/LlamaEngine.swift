@@ -3,7 +3,7 @@ import Observation
 import LlamaSwift
 
 @Observable
-final class LlamaEngine {
+final class LlamaEngine: @unchecked Sendable {
     private(set) var isModelLoaded = false
     private(set) var isGenerating = false
     private(set) var loadedModelName: String?
